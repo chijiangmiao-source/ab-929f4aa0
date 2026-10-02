@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+ARG TARGETARCH
+ENV TARGETARCH=${TARGETARCH:-x86_64}
+
+WORKDIR /workspace
+
+# Docker CLI (static binary) so the verify container can build the production
+# image and restart the server container through the mounted socket.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates tar \
+    && arch="$TARGETARCH"; case "$arch" in amd64) arch=x86_64;; arm64) arch=aarch64;; esac \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${arch}/docker-27.5.1.tgz" \
+        | tar xz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && chmod +x /usr/local/bin/docker \
+    && apt-get purge -y --auto-remove curl \
+    && rm -rf /var/lib/apt/lists/* /tmp/docker
+
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt pytest==8.3.4
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1 \
+    SERVER_URL=http://server:8080 \
+    SERVER_CONTAINER=buoy-server
+
+CMD ["python", "tests/verify_all.py"]
